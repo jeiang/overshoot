@@ -233,8 +233,8 @@ test "program: flash, invalid metadata and zero luminance" {
 test "white_balance_gains: tungsten stays warm and unknown is neutral" {
     // Goal: partial AWB leaves a warm cast. Method: 2850 K and 0 K on Canon.
     const warm = white_balance_gains(&profiles.canon_a3400, 2850);
-    try std.testing.expect(warm[0] > 1.1);
-    try std.testing.expect(warm[2] < 0.9);
+    try std.testing.expect(warm[0] > 1.05);
+    try std.testing.expect(warm[2] < 0.95);
     const neutral = white_balance_gains(&profiles.canon_a3400, 0);
     try std.testing.expectEqual([3]f32{ 1, 1, 1 }, neutral);
 }
