@@ -1,18 +1,15 @@
-//! By convention, root.zig is the root source file when making a package.
-const std = @import("std");
-const Io = std.Io;
+//! Overshoot core: a CPU pipeline that makes photos look like late-2000s compact cameras.
 
-/// This is a documentation comment to explain the `printAnotherMessage` function below.
-///
-/// Accepting an `Io.Writer` instance is a handy way to write reusable code.
-pub fn printAnotherMessage(writer: *Io.Writer) Io.Writer.Error!void {
-    try writer.print("Run `zig build test` to run the tests.\n", .{});
-}
+pub const profiles = @import("profiles.zig");
+pub const exposure = @import("exposure.zig");
+pub const pipeline = @import("pipeline.zig");
+pub const Pipeline = pipeline.Pipeline;
 
-pub fn add(a: i32, b: i32) i32 {
-    return a + b;
-}
-
-test "basic add functionality" {
-    try std.testing.expect(add(3, 7) == 10);
+test {
+    _ = @import("profiles.zig");
+    _ = @import("exposure.zig");
+    _ = @import("filters.zig");
+    _ = @import("workers.zig");
+    _ = @import("pipeline.zig");
+    _ = @import("c_api.zig");
 }
