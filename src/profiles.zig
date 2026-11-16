@@ -41,6 +41,8 @@ pub const Profile = struct {
     bloom_threshold: f32,
     bloom_sigma_px: f32,
     vignette_strength: f32,
+    /// CCD smear: multiplies each column's mean overexposure. RAW highlights reach up to 16x the
+    /// clip level after gain, so even small values draw a visible streak through bright lights.
     smear_strength: f32,
     /// Noise model coefficients at ISO 100.
     noise_shot: f32,
@@ -93,7 +95,7 @@ pub const canon_a3400: Profile = .{
     .bloom_threshold = 0.8,
     .bloom_sigma_px = 40,
     .vignette_strength = 0.25,
-    .smear_strength = 0.5,
+    .smear_strength = 0.015,
     .noise_shot = 0.0008,
     .noise_read = 0.0020,
     .awb_strength = 0.6,
@@ -141,7 +143,7 @@ pub const nikon_l11: Profile = .{
     .bloom_threshold = 0.7,
     .bloom_sigma_px = 30,
     .vignette_strength = 0.20,
-    .smear_strength = 1.0,
+    .smear_strength = 0.05,
     .noise_shot = 0.0006,
     .noise_read = 0.0015,
     .awb_strength = 0.8,
