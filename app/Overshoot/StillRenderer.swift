@@ -46,7 +46,7 @@ enum StillRenderer {
         }
         data.copyMemory(from: result.output_rgba, byteCount: outputWidth * outputHeight * 4)
         if settings.camera.hasDateStamp, settings.dateStamp != .off {
-            DateStamp.draw(in: bitmap, date: clockDate, includeTime: settings.dateStamp == .dateTime)
+            DateStamp.draw(in: bitmap, date: clockDate, includeTime: settings.dateStamp == .dateTime, orientation: orientation)
         }
         guard let cgImage = bitmap.makeImage() else { return .error("Not enough memory") }
         let properties = PhotoMetadata.properties(
