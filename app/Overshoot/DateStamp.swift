@@ -1,16 +1,31 @@
 import CoreGraphics
 import Foundation
+import ImageIO
 
-/// The Canon orange date stamp. Geometry, glyph shapes and colours are measured on 1024x768
-/// reference photos. The stamp is drawn upright in the photo's display orientation, sized from
-/// the displayed height, so portrait photos get a horizontal stamp at the bottom right.
+/// The Canon orange date stamp. The glyphs are coverage masks averaged from crops of the 10
+/// reference stamps (`StampFill.png`, and `StampOutline.png`, the fill dilated by 5% of the
+/// glyph height). Geometry and colours are measured on the same references. The stamp is drawn
+/// upright in the photo's display orientation, sized from the displayed height, so portrait
+/// photos get a horizontal stamp at the bottom right.
 enum DateStamp {
-    private static let glyphHeightFraction: CGFloat = 0.0274
-    private static let pitchPerGlyphHeight: CGFloat = 0.71
+    private static let glyphHeightFraction: CGFloat = 0.0286
+    private static let pitchPerGlyphHeight: CGFloat = 0.663
     private static let rightEdgeFraction: CGFloat = 0.932
     private static let digitBottomFraction: CGFloat = 0.872
     private static let fill = CGColor(srgbRed: 251 / 255, green: 162 / 255, blue: 3 / 255, alpha: 1)
     private static let outline = CGColor(srgbRed: 11 / 255, green: 1 / 255, blue: 0, alpha: 1)
+
+    /// Atlas layout: one cell per character in `characters`, each `cellWidth` x `cellHeight`
+    /// pixels, with the glyph's fill spanning `glyphPixels` rows starting `margin` rows down,
+    /// horizontally centred in the cell.
+    private static let characters = Array("0123456789/:")
+    private static let cellWidth = 112
+    private static let cellHeight = 152
+    private static let glyphPixels: CGFloat = 120
+    private static let margin: CGFloat = 16
+
+    private static let fillMasks = masks(named: "StampFill")
+    private static let outlineMasks = masks(named: "StampOutline")
 
     static func text(date: Date, includeTime: Bool) -> String {
         let formatter = DateFormatter()
@@ -21,6 +36,7 @@ enum DateStamp {
 
     /// `context` holds the sensor-oriented image; `orientation` is its EXIF orientation.
     static func draw(in context: CGContext, date: Date, includeTime: Bool, orientation: Int) {
+        guard let fillMasks, let outlineMasks else { return }
         let sensorWidth = CGFloat(context.width)
         let sensorHeight = CGFloat(context.height)
         let swapped = orientation == 6 || orientation == 8
@@ -28,28 +44,53 @@ enum DateStamp {
         let height = swapped ? sensorWidth : sensorHeight
         let glyphHeight = glyphHeightFraction * height
         let pitch = pitchPerGlyphHeight * glyphHeight
-        let characters = Array(text(date: date, includeTime: includeTime))
-        var x = rightEdgeFraction * width - pitch * CGFloat(characters.count)
+        let scale = glyphHeight / glyphPixels
+        let text = Array(text(date: date, includeTime: includeTime))
+        let left = rightEdgeFraction * width - pitch * CGFloat(text.count)
         let bottom = height * (1 - digitBottomFraction)
-        let centerlines = CGMutablePath()
-        for character in characters {
-            let origin = CGAffineTransform(translationX: x + (pitch - Glyphs.width * glyphHeight) / 2, y: bottom)
-                .scaledBy(x: glyphHeight, y: glyphHeight)
-            Glyphs.add(character, to: centerlines, transform: origin)
-            x += pitch
+        var cells: [(CGRect, Int)] = []
+        for (position, character) in text.enumerated() {
+            guard let index = characters.firstIndex(of: character) else { continue }
+            let centre = left + pitch * (CGFloat(position) + 0.5)
+            let rect = CGRect(
+                x: centre - CGFloat(cellWidth) * scale / 2,
+                y: bottom - (CGFloat(cellHeight) - margin - glyphPixels) * scale,
+                width: CGFloat(cellWidth) * scale,
+                height: CGFloat(cellHeight) * scale
+            )
+            cells.append((rect, index))
         }
-        let shape = centerlines.copy(strokingWithWidth: Glyphs.stroke * glyphHeight, lineCap: .butt, lineJoin: .round, miterLimit: 1).normalized()
         context.saveGState()
         context.concatenate(displayToSensor(orientation: orientation, sensorWidth: sensorWidth, sensorHeight: sensorHeight))
-        context.addPath(shape)
-        context.setStrokeColor(outline)
-        context.setLineWidth(2 * Glyphs.outline * glyphHeight)
-        context.setLineJoin(.round)
-        context.strokePath()
-        context.addPath(shape)
-        context.setFillColor(fill)
-        context.fillPath()
+        context.interpolationQuality = .high
+        for (masks, colour) in [(outlineMasks, outline), (fillMasks, fill)] {
+            for (rect, index) in cells {
+                context.saveGState()
+                context.clip(to: rect, mask: masks[index])
+                context.setFillColor(colour)
+                context.fill(rect)
+                context.restoreGState()
+            }
+        }
         context.restoreGState()
+    }
+
+    /// Splits a bundled atlas into one DeviceGray image per character; white paints.
+    private static func masks(named name: String) -> [CGImage]? {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "png"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let atlas = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              let gray = CGContext(
+                  data: nil, width: atlas.width, height: atlas.height, bitsPerComponent: 8, bytesPerRow: 0,
+                  space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue
+              )
+        else { return nil }
+        gray.draw(atlas, in: CGRect(x: 0, y: 0, width: atlas.width, height: atlas.height))
+        guard let grayAtlas = gray.makeImage() else { return nil }
+        let masks = characters.indices.compactMap { index in
+            grayAtlas.cropping(to: CGRect(x: index * cellWidth, y: 0, width: cellWidth, height: cellHeight))
+        }
+        return masks.count == characters.count ? masks : nil
     }
 
     /// Maps display coordinates (bottom-left origin) to the sensor bitmap's coordinates.
@@ -59,66 +100,6 @@ enum DateStamp {
         case 8: CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: 0, ty: sensorHeight)
         case 3: CGAffineTransform(a: -1, b: 0, c: 0, d: -1, tx: sensorWidth, ty: sensorHeight)
         default: .identity
-        }
-    }
-}
-
-/// Centerline shapes of the stamp's rounded-rectangle monospaced digits, in units of glyph
-/// height with the origin at the bottom left. The stroke turns them into filled outlines.
-private enum Glyphs {
-    static let width: CGFloat = 0.51
-    static let stroke: CGFloat = 0.105
-    /// Dark outline visible outside the fill.
-    static let outline: CGFloat = 0.05
-    private static let left = stroke / 2
-    private static let right = width - stroke / 2
-    private static let bottom = stroke / 2
-    private static let top = 1 - stroke / 2
-    /// Corner radius of the bowls: rounded rectangles rather than circles, as on the reference.
-    private static let round: CGFloat = 0.14
-
-    /// A centerline point; `corner` is the radius that rounds the turn at this point.
-    private typealias Point = (x: CGFloat, y: CGFloat, corner: CGFloat)
-
-    static func add(_ character: Character, to path: CGMutablePath, transform: CGAffineTransform) {
-        let (l, r, b, t, o) = (left, right, bottom, top, round)
-        let lines: [[Point]] = switch character {
-        case "0": [[(l, 0.5, 0), (l, t, o), (r, t, o), (r, b, o), (l, b, o), (l, 0.5, 0)]]
-        case "1": [[(0.3, b - 0.02, 0), (0.3, t, 0), (0.13, t - 0.12, 0)]]
-        case "2": [[(l, 0.7, 0), (l, t, o), (r, t, o), (r, 0.64, 0.16), (l, b, 0.02), (r + 0.01, b, 0)]]
-        case "3": [
-            [(l, 0.74, 0), (l, t, o), (r, t, o), (r, 0.53, 0.18), (l + 0.12, 0.53, 0)],
-            [(l + 0.12, 0.53, 0), (r, 0.53, 0.18), (r, b, o), (l, b, o), (l, 0.26, 0)],
-        ]
-        case "4": [
-            [(r - 0.05, t + 0.02, 0), (l, 0.34, 0.02), (r + 0.03, 0.34, 0)],
-            [(r - 0.05, t + 0.02, 0), (r - 0.05, b - 0.02, 0)],
-        ]
-        case "5": [[(r + 0.01, t, 0), (l, t, 0.02), (l, 0.56, 0.02), (r, 0.56, 0.2), (r, b, o), (l, b, o), (l, 0.25, 0)]]
-        case "6": [[(r, 0.76, 0), (r, t, o), (l, t, o), (l, b, o), (r, b, o), (r, 0.58, 0.18), (l, 0.58, 0)]]
-        case "7": [[(l, 0.8, 0), (l, t, 0.03), (r, t, 0.03), (r, 0.74, 0.12), (l + 0.12, b - 0.02, 0)]]
-        case "8": [
-            [(l + 0.03, 0.73, 0), (l + 0.03, t, 0.17), (r - 0.03, t, 0.17), (r - 0.03, 0.53, 0.17), (l + 0.03, 0.53, 0.17), (l + 0.03, 0.73, 0)],
-            [(l, 0.27, 0), (l, 0.53, 0.18), (r, 0.53, 0.18), (r, b, o), (l, b, o), (l, 0.27, 0)],
-        ]
-        case "9": [[(l, 0.24, 0), (l, b, o), (r, b, o), (r, t, o), (l, t, o), (l, 0.42, 0.18), (r, 0.42, 0)]]
-        case "/": [[(0.1, b - 0.04, 0), (width - 0.1, t + 0.04, 0)]]
-        case ":": [[(width / 2, 0.25, 0), (width / 2, 0.31, 0)], [(width / 2, 0.59, 0), (width / 2, 0.65, 0)]]
-        default: []
-        }
-        for line in lines { polyline(line, path, transform) }
-    }
-
-    private static func polyline(_ points: [Point], _ path: CGMutablePath, _ transform: CGAffineTransform) {
-        path.move(to: CGPoint(x: points[0].x, y: points[0].y), transform: transform)
-        for index in 1..<points.count {
-            let point = CGPoint(x: points[index].x, y: points[index].y)
-            if points[index].corner > 0, index < points.count - 1 {
-                let next = CGPoint(x: points[index + 1].x, y: points[index + 1].y)
-                path.addArc(tangent1End: point, tangent2End: next, radius: points[index].corner, transform: transform)
-            } else {
-                path.addLine(to: point, transform: transform)
-            }
         }
     }
 }
