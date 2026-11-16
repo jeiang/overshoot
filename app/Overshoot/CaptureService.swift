@@ -43,6 +43,7 @@ final class CaptureService: NSObject {
         sessionQueue.async { [self] in
             if !configured {
                 guard configure() else { return }
+                configurePhotoDimensions()
                 configured = true
             }
             if !session.isRunning { session.startRunning() }
@@ -84,6 +85,8 @@ final class CaptureService: NSObject {
         session.addInput(input)
         videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
         videoOutput.alwaysDiscardsLateVideoFrames = true
+        // deliversPreviewSizedOutputBuffers throws unless automatic sizing is off first.
+        videoOutput.automaticallyConfiguresOutputBufferDimensions = false
         videoOutput.deliversPreviewSizedOutputBuffers = true
         videoOutput.setSampleBufferDelegate(self, queue: preview.queue)
         guard session.canAddOutput(videoOutput), session.canAddOutput(photoOutput) else {
@@ -97,12 +100,19 @@ final class CaptureService: NSObject {
             // Stabilization crops the field of view; the photo has none.
             if connection.isVideoStabilizationSupported { connection.preferredVideoStabilizationMode = .off }
         }
-        let largest = device.activeFormat.supportedMaxPhotoDimensions.max { $0.width * $0.height < $1.width * $1.height }
-        let capped = device.activeFormat.supportedMaxPhotoDimensions.first { $0.width == 4032 && $0.height == 3024 }
-        if let dimensions = capped ?? largest { photoOutput.maxPhotoDimensions = dimensions }
         self.device = device
         rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
         return true
+    }
+
+    /// Runs after commitConfiguration: the preset picks the active format at commit, and the
+    /// photo output rejects dimensions that format does not support.
+    private func configurePhotoDimensions() {
+        guard let device else { return }
+        let supported = device.activeFormat.supportedMaxPhotoDimensions
+        let largest = supported.max { $0.width * $0.height < $1.width * $1.height }
+        let capped = supported.first { $0.width == 4032 && $0.height == 3024 }
+        if let dimensions = capped ?? largest { photoOutput.maxPhotoDimensions = dimensions }
     }
 
     private func focalLength35mm(_ device: AVCaptureDevice) -> Float {

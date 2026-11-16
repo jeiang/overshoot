@@ -29,8 +29,9 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = cli_module })).step);
 
     const xcframework_step = add_xcframework_step(b);
-    const xcodegen_step = add_app_steps(b, xcframework_step);
-    add_testflight_step(b, xcodegen_step);
+    const auth = provisioning_auth(b);
+    const xcodegen_step = add_app_steps(b, xcframework_step, auth);
+    add_testflight_step(b, xcodegen_step, auth);
     add_lint_step(b);
 }
 
@@ -76,7 +77,29 @@ fn add_xcframework_step(b: *std.Build) *std.Build.Step {
     return step;
 }
 
-fn add_app_steps(b: *std.Build, xcframework_step: *std.Build.Step) *std.Build.Step {
+/// xcodebuild arguments that let automatic signing create profiles through an App Store Connect
+/// API key, or null when the -Dasc-* options are not all given.
+fn provisioning_auth(b: *std.Build) ?[]const []const u8 {
+    const key_path = b.option([]const u8, "asc-key-path", "App Store Connect API key (.p8)");
+    const key_id = b.option([]const u8, "asc-key-id", "App Store Connect API key ID");
+    const issuer_id = b.option([]const u8, "asc-issuer-id", "App Store Connect issuer ID");
+    if (key_path == null or key_id == null or issuer_id == null) return null;
+    return b.allocator.dupe([]const u8, &.{
+        "-allowProvisioningUpdates",
+        "-authenticationKeyPath",
+        key_path.?,
+        "-authenticationKeyID",
+        key_id.?,
+        "-authenticationKeyIssuerID",
+        issuer_id.?,
+    }) catch @panic("OOM");
+}
+
+fn add_app_steps(
+    b: *std.Build,
+    xcframework_step: *std.Build.Step,
+    auth: ?[]const []const u8,
+) *std.Build.Step {
     const Destination = enum { device, simulator };
     const destination = b.option(Destination, "app-destination", "device or simulator") orelse
         .device;
@@ -101,6 +124,7 @@ fn add_app_steps(b: *std.Build, xcframework_step: *std.Build.Step) *std.Build.St
         .simulator => "generic/platform=iOS Simulator",
     });
     if (!sign) xcodebuild.addArg("CODE_SIGNING_ALLOWED=NO");
+    if (sign) if (auth) |arguments| xcodebuild.addArgs(arguments);
     xcodebuild.addArg("build");
     xcodebuild.setCwd(b.path("."));
     xcodebuild.has_side_effects = true;
@@ -131,36 +155,28 @@ const export_options_format =
 
 /// Archives with automatic signing through an App Store Connect API key, then exports and (by
 /// default) uploads to TestFlight. The archive lands in zig-out/Overshoot.xcarchive.
-fn add_testflight_step(b: *std.Build, xcodegen_step: *std.Build.Step) void {
+fn add_testflight_step(
+    b: *std.Build,
+    xcodegen_step: *std.Build.Step,
+    auth: ?[]const []const u8,
+) void {
     const step = b.step("testflight", "Archive, sign and upload the app to TestFlight");
-    const key_path = b.option([]const u8, "asc-key-path", "App Store Connect API key (.p8)");
-    const key_id = b.option([]const u8, "asc-key-id", "App Store Connect API key ID");
-    const issuer_id = b.option([]const u8, "asc-issuer-id", "App Store Connect issuer ID");
     const build_number = b.option([]const u8, "build-number", "CFBundleVersion, grows per upload");
     const upload = b.option(bool, "testflight-upload", "Upload after export (default true)") orelse
         true;
-    if (key_path == null or key_id == null or issuer_id == null or build_number == null) {
+    if (auth == null or build_number == null) {
         const message = "testflight needs -Dasc-key-path, -Dasc-key-id, -Dasc-issuer-id and " ++
             "-Dbuild-number";
         step.dependOn(&b.addFail(message).step);
         return;
     }
-    const auth = [_][]const u8{
-        "-allowProvisioningUpdates",
-        "-authenticationKeyPath",
-        key_path.?,
-        "-authenticationKeyID",
-        key_id.?,
-        "-authenticationKeyIssuerID",
-        issuer_id.?,
-    };
     const archive = b.addSystemCommand(&.{
         "xcodebuild",              "archive",      "-project",
         "app/Overshoot.xcodeproj", "-scheme",      "Overshoot",
         "-configuration",          "Release",      "-destination",
         "generic/platform=iOS",    "-archivePath", "zig-out/Overshoot.xcarchive",
     });
-    archive.addArgs(&auth);
+    archive.addArgs(auth.?);
     archive.addArg(b.fmt("CURRENT_PROJECT_VERSION={s}", .{build_number.?}));
     archive.setCwd(b.path("."));
     archive.has_side_effects = true;
@@ -177,7 +193,7 @@ fn add_testflight_step(b: *std.Build, xcodegen_step: *std.Build.Step) void {
         "-exportOptionsPlist",
     });
     export_archive.addFileArg2(options, .{});
-    export_archive.addArgs(&auth);
+    export_archive.addArgs(auth.?);
     export_archive.setCwd(b.path("."));
     export_archive.has_side_effects = true;
     export_archive.step.dependOn(&archive.step);
