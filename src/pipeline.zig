@@ -531,8 +531,10 @@ fn meter(planes: PlaneSet, width: u32, height: u32) f32 {
         var x: u32 = 0;
         while (x < width) : (x += 8) {
             const index = @as(usize, y) * width + x;
-            const luma = 0.2126 * planes[0][index] + 0.7152 * planes[1][index] +
-                0.0722 * planes[2][index];
+            // Clipped at white like a sensor's meter: RAW input carries lamps at up to 9x white,
+            // which would otherwise pull the exposure down by several stops.
+            const luma = @min(0.2126 * planes[0][index] + 0.7152 * planes[1][index] +
+                0.0722 * planes[2][index], 1);
             const u = (@as(f32, @floatFromInt(x)) + 0.5 - w / 2) / half_d;
             const v = (@as(f32, @floatFromInt(y)) + 0.5 - h / 2) / half_d;
             const weight = 1 + 2 * @exp(-(u * u + v * v) / (2 * 0.3 * 0.3));
