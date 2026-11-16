@@ -49,6 +49,9 @@ pub const Profile = struct {
     saturation: f32,
     tone_contrast: f32,
     tone_black_lift: f32,
+    /// Linear level that maps to black: crushes the rectified sensor-noise floor, which the steep
+    /// sRGB curve would otherwise lift to a grey haze in the shadows.
+    tone_black_clip: f32,
     /// Noise reduction parameters at ISO 100.
     nr_luma_threshold: f32,
     nr_chroma_sigma_px: f32,
@@ -97,6 +100,7 @@ pub const canon_a3400: Profile = .{
     .saturation = 1.20,
     .tone_contrast = 0.35,
     .tone_black_lift = 0.01,
+    .tone_black_clip = 0.008,
     .nr_luma_threshold = 0.020,
     .nr_chroma_sigma_px = 1.5,
     .sharpen_amount = 1.2,
@@ -144,6 +148,7 @@ pub const nikon_l11: Profile = .{
     .saturation = 1.30,
     .tone_contrast = 0.10,
     .tone_black_lift = 0.08,
+    .tone_black_clip = 0,
     .nr_luma_threshold = 0.010,
     .nr_chroma_sigma_px = 1.0,
     .sharpen_amount = 0.9,
@@ -163,6 +168,8 @@ comptime {
         // Bloom runs at 1/8 scale, where the blur radius is capped at 32 taps.
         assert(profile.bloom_sigma_px * 3 / 8 <= 32);
         assert(profile.blur_sigma_px_corner > profile.blur_sigma_px_center);
+        assert(profile.tone_black_clip >= 0);
+        assert(profile.tone_black_clip < 0.1);
         assert(profile.focal_length_35mm_tele > profile.focal_length_35mm_wide);
         assert(profile.focal_length_mm_tele > profile.focal_length_mm_wide);
     }

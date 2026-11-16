@@ -970,15 +970,18 @@ fn srgb_oetf(x: f32) f32 {
     return if (x <= 0.0031308) 12.92 * x else 1.055 * std.math.pow(f32, x, 1.0 / 2.4) - 0.055;
 }
 
-/// Linear light to display value: sRGB encoding, an S-curve, and a black lift.
+/// Linear light to display value: a black clip, sRGB encoding, an S-curve, and a black lift.
 fn build_tone_lut(profile: *const Profile, lut: *[tone_lut_size]f32) void {
     assert(@abs(profile.tone_contrast) < 1);
     assert(profile.tone_black_lift >= 0);
+    assert(profile.tone_black_clip >= 0);
+    assert(profile.tone_black_clip < 1);
     const k = profile.tone_contrast;
     const lift = profile.tone_black_lift;
+    const clip = profile.tone_black_clip;
     for (lut, 0..) |*entry, index| {
         const x = @as(f32, @floatFromInt(index)) / (tone_lut_size - 1);
-        var v = srgb_oetf(x);
+        var v = srgb_oetf(@max(x - clip, 0) / (1 - clip));
         v += k * v * (1 - v) * (2 * v - 1);
         entry.* = lift + (1 - lift) * v;
     }
