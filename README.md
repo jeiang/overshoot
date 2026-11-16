@@ -15,6 +15,15 @@ zig build app -Dapp-destination=simulator -Dapp-sign=false
 zig build app                                        # signed device build
 ```
 
+Signed builds use automatic signing. Pass an App Store Connect API key so Xcode can create the provisioning profiles itself:
+
+```sh
+zig build app -Dasc-key-path=<AuthKey.p8> -Dasc-key-id=<key ID> -Dasc-issuer-id=<issuer ID>
+zig build testflight -Dbuild-number=$(date +%Y%m%d%H%M) -Dasc-key-path=… -Dasc-key-id=… -Dasc-issuer-id=…
+```
+
+`testflight` archives to `zig-out/Overshoot.xcarchive` and uploads the build to App Store Connect (add `-Dtestflight-upload=false` to only export `zig-out/testflight/Overshoot.ipa`). The export signs with the keychain's Apple Distribution identity and the "Overshoot App Store" provisioning profile, which must be installed in `~/Library/Developer/Xcode/UserData/Provisioning Profiles`. The build number must grow with every upload.
+
 `overshoot-cli render --camera canon|nikon --input <image> --output <jpg>` renders a photo through the core pipeline; `overshoot-cli stats <image>...` prints the tone statistics used for calibration.
 
 Zig code follows [`docs/TIGER_STYLE.md`](docs/TIGER_STYLE.md).
