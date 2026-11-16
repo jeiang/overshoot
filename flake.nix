@@ -27,6 +27,9 @@
               pkgs.zig_0_17
               pkgs.xcodegen
             ];
+            # Zig treats a set NIX_CFLAGS_COMPILE as a Nix build and skips macOS SDK
+            # detection, so framework links (ImageIO for overshoot-cli) fail.
+            shellHook = "unset NIX_CFLAGS_COMPILE";
           };
         }
       );
