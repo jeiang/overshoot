@@ -26,6 +26,8 @@ zig build testflight -Dbuild-number=$(date +%Y%m%d%H%M) -Dasc-key-path=… -Dasc
 
 `overshoot-cli render --camera canon|nikon --input <image> --output <jpg>` renders a photo through the core pipeline; `overshoot-cli stats <image>...` prints the tone statistics used for calibration.
 
+To tune against the app's real RAW-derived input, launch a development build with `xcrun devicectl device process launch --device <udid> co.aidanpinard.overshoot -- -dumpcapture` and take photos. Each capture writes `capture-<time>.f16` (linear RGBA f16 staging input), `.args` (the matching render arguments), `.jpg` and `-preview.png` to the app's Documents. Pull them with `xcrun devicectl device copy from --device <udid> --domain-type appDataContainer --domain-identifier co.aidanpinard.overshoot --source Documents/<file> --destination <file>`, then reproduce the photo with `overshoot-cli render --input-f16 capture-<time>.f16 $(cat capture-<time>.args) --output out.jpg`.
+
 Zig code follows [`docs/TIGER_STYLE.md`](docs/TIGER_STYLE.md).
 
 ## License

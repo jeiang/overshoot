@@ -13,6 +13,8 @@ const usage =
     \\  overshoot-cli render --camera canon|nikon --input <image> --output <jpg>
     \\      [--facebook <jpg>] [--zoom 0..1] [--exposure-time S --iso N --aperture F]
     \\      [--focal-length-35mm-capture MM] [--temperature K] [--flash] [--seed N]
+    \\  --input-f16 <file> --width W --height H replaces --input with a linear RGBA f16
+    \\      staging dump from the app (launched with -dumpcapture).
     \\  overshoot-cli stats <image>...
     \\
 ;
@@ -33,7 +35,7 @@ pub fn main(init: std.process.Init) !void {
     const command = arguments[1];
     if (std.mem.eql(u8, command, "render")) {
         const options = parse_render(arguments[2..]);
-        try render(init.gpa, &options);
+        try render(init.gpa, init.io, &options);
     } else if (std.mem.eql(u8, command, "stats")) {
         if (arguments.len < 3) fail("stats needs at least one image", .{});
         var buffer: [4096]u8 = undefined;
@@ -49,6 +51,9 @@ pub fn main(init: std.process.Init) !void {
 const RenderOptions = struct {
     camera: ?profiles.Camera = null,
     input: ?[:0]const u8 = null,
+    input_f16: ?[:0]const u8 = null,
+    width: ?u32 = null,
+    height: ?u32 = null,
     output: ?[:0]const u8 = null,
     facebook: ?[:0]const u8 = null,
     zoom: f32 = 0,
@@ -92,6 +97,12 @@ fn parse_render(arguments: []const [:0]const u8) RenderOptions {
             } else fail("--camera must be canon or nikon, not {s}", .{value});
         } else if (std.mem.eql(u8, flag, "--input")) {
             options.input = value;
+        } else if (std.mem.eql(u8, flag, "--input-f16")) {
+            options.input_f16 = value;
+        } else if (std.mem.eql(u8, flag, "--width")) {
+            options.width = std.fmt.parseInt(u32, value, 10) catch fail("--width: {s}", .{value});
+        } else if (std.mem.eql(u8, flag, "--height")) {
+            options.height = std.fmt.parseInt(u32, value, 10) catch fail("--height: {s}", .{value});
         } else if (std.mem.eql(u8, flag, "--output")) {
             options.output = value;
         } else if (std.mem.eql(u8, flag, "--facebook")) {
@@ -113,26 +124,65 @@ fn parse_render(arguments: []const [:0]const u8) RenderOptions {
         } else fail("unknown flag {s}", .{flag});
     }
     if (options.camera == null) fail("--camera is required", .{});
-    if (options.input == null) fail("--input is required", .{});
+    if ((options.input == null) == (options.input_f16 == null)) {
+        fail("give exactly one of --input and --input-f16", .{});
+    }
+    if (options.input_f16 != null and (options.width == null or options.height == null)) {
+        fail("--input-f16 needs --width and --height", .{});
+    }
     if (options.output == null) fail("--output is required", .{});
     return options;
 }
 
-fn render(gpa: std.mem.Allocator, options: *const RenderOptions) !void {
-    const input = options.input.?;
-    const output = options.output.?;
-    const size = image_io.image_size(input) catch |err| fail("{s}: {t}", .{ input, err });
+fn input_size(options: *const RenderOptions) image_io.Size {
+    const size: image_io.Size = if (options.input) |input|
+        image_io.image_size(input) catch |err| fail("{s}: {t}", .{ input, err })
+    else
+        .{ .width = options.width.?, .height = options.height.? };
     if (size.width > pipeline_module.staging_width_max or
         size.height > pipeline_module.staging_height_max)
     {
-        fail("{s} is {d}x{d}; the maximum is {d}x{d}", .{
-            input,
+        fail("the input is {d}x{d}; the maximum is {d}x{d}", .{
             size.width,
             size.height,
             pipeline_module.staging_width_max,
             pipeline_module.staging_height_max,
         });
     }
+    return size;
+}
+
+/// Fills the staging buffer from an image file or from a raw RGBA f16 dump of the same layout.
+fn load_input(io: std.Io, options: *const RenderOptions, size: image_io.Size, staging: []f16) void {
+    if (options.input) |input| {
+        image_io.decode_linear_f16(input, size, staging) catch |err| fail("{s}: {t}", .{
+            input,
+            err,
+        });
+        return;
+    }
+    const path = options.input_f16.?;
+    const bytes = std.mem.sliceAsBytes(staging);
+    const file = std.Io.Dir.cwd().openFile(io, path, .{}) catch |err| fail("{s}: {t}", .{
+        path,
+        err,
+    });
+    defer file.close(io);
+    const length = file.length(io) catch |err| fail("{s}: {t}", .{ path, err });
+    if (length != bytes.len) fail("{s} has {d} bytes; {d}x{d} RGBA f16 needs {d}", .{
+        path,
+        length,
+        size.width,
+        size.height,
+        bytes.len,
+    });
+    const read = file.readPositionalAll(io, bytes, 0) catch |err| fail("{s}: {t}", .{ path, err });
+    if (read != bytes.len) fail("{s}: short read", .{path});
+}
+
+fn render(gpa: std.mem.Allocator, io: std.Io, options: *const RenderOptions) !void {
+    const output = options.output.?;
+    const size = input_size(options);
     const pipeline = try gpa.create(overshoot.Pipeline);
     defer gpa.destroy(pipeline);
     try pipeline.init(gpa, .{
@@ -143,7 +193,7 @@ fn render(gpa: std.mem.Allocator, options: *const RenderOptions) !void {
     });
     defer pipeline.deinit();
     const staging = pipeline.staging(size.width, size.height);
-    image_io.decode_linear_f16(input, size, staging) catch |err| fail("{s}: {t}", .{ input, err });
+    load_input(io, options, size, staging);
     const metadata_valid = options.exposure_time_s != null and options.iso != null and
         options.aperture != null;
     const frame: pipeline_module.Frame = .{

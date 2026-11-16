@@ -36,6 +36,7 @@ enum StillRenderer {
         )
         let clockDate = settings.cameraClockDate
         var frame = makeFrame(photo: photo, settings: settings, temperature: temperature, previewFocalLength35mm: previewFocalLength35mm)
+        let dump = CaptureDump.writeInput(staging: staging, width: width, height: height, frame: frame)
         let start = Date()
         let result = pipeline.process(width: width, height: height, frame: &frame)
         Logger.capture.info("still processing took \(Date().timeIntervalSince(start), format: .fixed(precision: 3)) s")
@@ -60,6 +61,7 @@ enum StillRenderer {
         guard let jpeg = encodeJPEG(cgImage, quality: CGFloat(settings.camera.info.jpeg_quality), properties: properties) else {
             return .error("Cannot encode the photo")
         }
+        CaptureDump.writeOutput(name: dump, jpeg: jpeg)
         var saves = [jpeg]
         if settings.facebookCopy, let copy = facebookCopy(of: jpeg) { saves.append(copy) }
         if let failure = save(saves, date: clockDate) { return failure }

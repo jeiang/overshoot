@@ -199,6 +199,7 @@ extension CaptureService: AVCaptureVideoDataOutputSampleBufferDelegate {
         )
         let result = preview.process(&source, &frame)
         guard let image = RGBAImage.make(result.output_rgba, width: Int(result.output_width), height: Int(result.output_height)) else { return }
+        CaptureDump.record(preview: image)
         DispatchQueue.main.async { [weak self] in self?.model?.previewImage = image }
     }
 }

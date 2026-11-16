@@ -102,6 +102,7 @@ final class CameraModel {
         facebookCopy = defaults.bool(forKey: "facebookCopy")
         capture.model = self
         publishSettings()
+        DispatchQueue.global(qos: .utility).async { CaptureDump.removeOldDumpsUnlessEnabled() }
     }
 
     private func publishSettings() {
