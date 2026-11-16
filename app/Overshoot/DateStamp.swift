@@ -5,12 +5,12 @@ import Foundation
 /// reference photos. The stamp is drawn upright in the photo's display orientation, sized from
 /// the displayed height, so portrait photos get a horizontal stamp at the bottom right.
 enum DateStamp {
-    private static let glyphHeightFraction: CGFloat = 0.0286
-    private static let pitchPerGlyphHeight: CGFloat = 0.68
+    private static let glyphHeightFraction: CGFloat = 0.0274
+    private static let pitchPerGlyphHeight: CGFloat = 0.71
     private static let rightEdgeFraction: CGFloat = 0.932
     private static let digitBottomFraction: CGFloat = 0.872
-    private static let fill = CGColor(srgbRed: 218 / 255, green: 138 / 255, blue: 28 / 255, alpha: 1)
-    private static let outline = CGColor(srgbRed: 28 / 255, green: 8 / 255, blue: 0, alpha: 1)
+    private static let fill = CGColor(srgbRed: 251 / 255, green: 162 / 255, blue: 3 / 255, alpha: 1)
+    private static let outline = CGColor(srgbRed: 11 / 255, green: 1 / 255, blue: 0, alpha: 1)
 
     static func text(date: Date, includeTime: Bool) -> String {
         let formatter = DateFormatter()
@@ -63,19 +63,19 @@ enum DateStamp {
     }
 }
 
-/// Centerline shapes of the stamp's heavy, rounded-square monospaced digits, in units of glyph
+/// Centerline shapes of the stamp's rounded-rectangle monospaced digits, in units of glyph
 /// height with the origin at the bottom left. The stroke turns them into filled outlines.
 private enum Glyphs {
-    static let width: CGFloat = 0.58
-    static let stroke: CGFloat = 0.13
+    static let width: CGFloat = 0.51
+    static let stroke: CGFloat = 0.105
     /// Dark outline visible outside the fill.
-    static let outline: CGFloat = 0.06
+    static let outline: CGFloat = 0.05
     private static let left = stroke / 2
     private static let right = width - stroke / 2
     private static let bottom = stroke / 2
     private static let top = 1 - stroke / 2
-    /// Half the glyph's inner width: corners with this radius make a fully round bowl.
-    private static let round = (right - left) / 2
+    /// Corner radius of the bowls: rounded rectangles rather than circles, as on the reference.
+    private static let round: CGFloat = 0.14
 
     /// A centerline point; `corner` is the radius that rounds the turn at this point.
     private typealias Point = (x: CGFloat, y: CGFloat, corner: CGFloat)
@@ -84,8 +84,8 @@ private enum Glyphs {
         let (l, r, b, t, o) = (left, right, bottom, top, round)
         let lines: [[Point]] = switch character {
         case "0": [[(l, 0.5, 0), (l, t, o), (r, t, o), (r, b, o), (l, b, o), (l, 0.5, 0)]]
-        case "1": [[(0.36, b - 0.02, 0), (0.36, t, 0), (0.17, t - 0.13, 0)]]
-        case "2": [[(l, 0.7, 0), (l, t, o), (r, t, o), (r, 0.58, 0.2), (l, b, 0.03), (r + 0.02, b, 0)]]
+        case "1": [[(0.3, b - 0.02, 0), (0.3, t, 0), (0.13, t - 0.12, 0)]]
+        case "2": [[(l, 0.7, 0), (l, t, o), (r, t, o), (r, 0.64, 0.16), (l, b, 0.02), (r + 0.01, b, 0)]]
         case "3": [
             [(l, 0.74, 0), (l, t, o), (r, t, o), (r, 0.53, 0.18), (l + 0.12, 0.53, 0)],
             [(l + 0.12, 0.53, 0), (r, 0.53, 0.18), (r, b, o), (l, b, o), (l, 0.26, 0)],
@@ -103,7 +103,7 @@ private enum Glyphs {
         ]
         case "9": [[(l, 0.24, 0), (l, b, o), (r, b, o), (r, t, o), (l, t, o), (l, 0.42, 0.18), (r, 0.42, 0)]]
         case "/": [[(0.1, b - 0.04, 0), (width - 0.1, t + 0.04, 0)]]
-        case ":": [[(width / 2, 0.21, 0), (width / 2, 0.27, 0)], [(width / 2, 0.63, 0), (width / 2, 0.69, 0)]]
+        case ":": [[(width / 2, 0.25, 0), (width / 2, 0.31, 0)], [(width / 2, 0.59, 0), (width / 2, 0.65, 0)]]
         default: []
         }
         for line in lines { polyline(line, path, transform) }
