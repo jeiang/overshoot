@@ -45,6 +45,8 @@ typedef struct {
     float aperture;
     float focal_length_mm;
     float focal_length_35mm;
+    /* 1 when the emulated camera's auto flash would fire for this frame. */
+    uint32_t flash_needed;
     uint32_t output_width;
     uint32_t output_height;
     const uint8_t *output_rgba;

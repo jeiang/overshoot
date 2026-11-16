@@ -25,6 +25,9 @@ pub const Virtual = struct {
     /// Linear multiplier applied to the capture.
     gain: f32,
     flash_fired: bool,
+    /// The camera's auto flash would fire: even at the auto ISO limit, the shutter would be
+    /// slower than the handheld limit. Only set for metadata-valid captures without flash.
+    flash_needed: bool,
 };
 
 const shutter_stops_s = [_]f32{
@@ -100,6 +103,7 @@ pub fn program(
     var exposure_time_s: f32 = 1.0 / 60.0;
     var iso: f32 = profile.iso_min;
     var underexposure: f32 = 1;
+    var flash_needed = false;
     if (!capture.metadata_valid) {
         // Without capture metadata only the meter is known: keep a neutral exposure.
     } else if (capture.flash_fired) {
@@ -121,6 +125,7 @@ pub fn program(
             );
             exposure_time_s = n2 / @exp2(ev_needed + @log2(iso / 100));
         }
+        flash_needed = exposure_time_s > profile.shutter_s_handheld;
         if (exposure_time_s > profile.shutter_s_slowest) {
             underexposure = profile.shutter_s_slowest / exposure_time_s;
             exposure_time_s = profile.shutter_s_slowest;
@@ -134,6 +139,7 @@ pub fn program(
         .focal_length_35mm = focal_length_35mm_at(profile, zoom),
         .gain = std.math.clamp(target / m * underexposure, 1.0 / 16.0, 16.0),
         .flash_fired = capture.metadata_valid and capture.flash_fired,
+        .flash_needed = flash_needed,
     };
     assert_virtual_valid(&virtual);
     return virtual;
@@ -194,6 +200,7 @@ test "program: daylight on Canon gives base ISO and the meter gain" {
         null);
     const expected_gain = profiles.canon_a3400.meter_target / 0.18;
     try std.testing.expectApproxEqRel(expected_gain, virtual.gain, 1e-5);
+    try std.testing.expect(!virtual.flash_needed);
 }
 
 test "program: dim scene on Nikon hits the ISO and shutter limits" {
@@ -209,6 +216,7 @@ test "program: dim scene on Nikon hits the ISO and shutter limits" {
     try std.testing.expectEqual(@as(f32, 400), virtual.iso);
     try std.testing.expectEqual(@as(f32, 0.25), virtual.exposure_time_s);
     try std.testing.expect(virtual.gain < profiles.nikon_l11.meter_target / 0.18);
+    try std.testing.expect(virtual.flash_needed);
 }
 
 test "program: flash, invalid metadata and zero luminance" {
@@ -222,6 +230,7 @@ test "program: flash, invalid metadata and zero luminance" {
     };
     const flash = program(&profiles.canon_a3400, 0.5, &capture, 0.1);
     try std.testing.expectEqual(profiles.canon_a3400.flash_shutter_s, flash.exposure_time_s);
+    try std.testing.expect(!flash.flash_needed);
     capture.metadata_valid = false;
     const invalid = program(&profiles.nikon_l11, 0, &capture, 0.1);
     try std.testing.expectEqual(@as(f32, 1.0 / 60.0), invalid.exposure_time_s);

@@ -20,6 +20,9 @@ final class CaptureService: NSObject {
     private let pausedLock = OSAllocatedUnfairLock(initialState: false)
     private var configured = false
     private var frameCounter: UInt32 = 0
+    /// The emulated camera's auto-flash decision for the latest preview frame. Auto flash follows
+    /// it instead of the iPhone's own decision, which rarely fires in rooms a compact would light.
+    private let flashNeeded = OSAllocatedUnfairLock(initialState: false)
     private var pendingCapture: PendingCapture?
 
     private struct PendingCapture {
@@ -134,7 +137,7 @@ final class CaptureService: NSObject {
                 photoSettings.maxPhotoDimensions = photoOutput.maxPhotoDimensions
             }
             let flash: AVCaptureDevice.FlashMode = switch settings.flash {
-            case .auto: .auto
+            case .auto: flashNeeded.withLock { $0 } ? .on : .off
             case .on: .on
             case .off: .off
             }
@@ -198,6 +201,7 @@ extension CaptureService: AVCaptureVideoDataOutputSampleBufferDelegate {
             seed: frameCounter
         )
         let result = preview.process(&source, &frame)
+        flashNeeded.withLock { $0 = result.flash_needed != 0 }
         guard let image = RGBAImage.make(result.output_rgba, width: Int(result.output_width), height: Int(result.output_height)) else { return }
         CaptureDump.record(preview: image)
         DispatchQueue.main.async { [weak self] in self?.model?.previewImage = image }
