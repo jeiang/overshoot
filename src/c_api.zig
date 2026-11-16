@@ -8,6 +8,18 @@ const exposure = @import("exposure.zig");
 const pipeline_module = @import("pipeline.zig");
 const Pipeline = pipeline_module.Pipeline;
 
+/// The default handler reaches stderr through `std.Io.Threaded`, which references private Darwin
+/// symbols (`__ulock_wait2`, `__ulock_wake`) that App Store validation rejects. This handler
+/// uses libc only.
+pub const panic = std.debug.FullPanic(panic_abort);
+
+fn panic_abort(message: []const u8, first_trace_address: ?usize) noreturn {
+    _ = first_trace_address;
+    _ = std.c.write(2, message.ptr, message.len);
+    _ = std.c.write(2, "\n", 1);
+    std.c.abort();
+}
+
 const CameraInfo = extern struct {
     make: [*:0]const u8,
     model: [*:0]const u8,
