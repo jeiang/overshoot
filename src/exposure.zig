@@ -192,7 +192,8 @@ test "program: daylight on Canon gives base ISO and the meter gain" {
     try std.testing.expectEqual(@as(f32, 100), virtual.iso);
     try std.testing.expect(std.mem.findScalar(f32, &shutter_stops_s, virtual.exposure_time_s) !=
         null);
-    try std.testing.expectApproxEqRel(@as(f32, 0.16 / 0.18), virtual.gain, 1e-5);
+    const expected_gain = profiles.canon_a3400.meter_target / 0.18;
+    try std.testing.expectApproxEqRel(expected_gain, virtual.gain, 1e-5);
 }
 
 test "program: dim scene on Nikon hits the ISO and shutter limits" {
@@ -207,7 +208,7 @@ test "program: dim scene on Nikon hits the ISO and shutter limits" {
     const virtual = program(&profiles.nikon_l11, 0, &capture, 0.18);
     try std.testing.expectEqual(@as(f32, 400), virtual.iso);
     try std.testing.expectEqual(@as(f32, 0.25), virtual.exposure_time_s);
-    try std.testing.expect(virtual.gain < 0.30 / 0.18);
+    try std.testing.expect(virtual.gain < profiles.nikon_l11.meter_target / 0.18);
 }
 
 test "program: flash, invalid metadata and zero luminance" {
