@@ -26,7 +26,8 @@ targets:
         LSApplicationCategoryType: public.app-category.photography
         NSCameraUsageDescription: "Overshoot uses the camera to take photos."
         NSPhotoLibraryAddUsageDescription: "Overshoot saves your photos to your library."
-        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSPhotoLibraryUsageDescription: "Overshoot saves your photos to an Overshoot album and shows that album in its gallery."
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UIRequiresFullScreen: true
         UIStatusBarHidden: true
         UILaunchScreen: {}

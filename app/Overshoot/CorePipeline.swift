@@ -12,6 +12,12 @@ enum Camera: UInt32, CaseIterable {
     var zoomRatio: Float { info.focal_length_35mm_tele / info.focal_length_35mm_wide }
     var make: String { String(cString: info.make) }
     var model: String { String(cString: info.model) }
+    var displayName: String {
+        switch self {
+        case .canonA3400: "Canon PowerShot A3400 IS"
+        case .nikonL11: "Nikon Coolpix L11"
+        }
+    }
 }
 
 /// The live viewfinder pipeline: 480x640 portrait output, created once at app start.

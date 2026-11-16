@@ -175,17 +175,11 @@ enum StillRenderer {
     private static func save(_ photos: [Data], date: Date) -> CameraState? {
         let semaphore = DispatchSemaphore(value: 0)
         var status = PHAuthorizationStatus.notDetermined
-        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status = $0; semaphore.signal() }
+        PHPhotoLibrary.requestAuthorization(for: .readWrite) { status = $0; semaphore.signal() }
         semaphore.wait()
-        guard status == .authorized || status == .limited else { return .error("Photos access denied") }
+        guard status == .authorized || status == .limited else { return .error("Allow Photos access in Settings to save photos") }
         do {
-            try PHPhotoLibrary.shared().performChangesAndWait {
-                for photo in photos {
-                    let request = PHAssetCreationRequest.forAsset()
-                    request.addResource(with: .photo, data: photo, options: nil)
-                    request.creationDate = date
-                }
-            }
+            try PhotoLibrary.save(photos, date: date)
         } catch {
             Logger.capture.error("save failed: \(error.localizedDescription)")
             return .error("Cannot save the photo")

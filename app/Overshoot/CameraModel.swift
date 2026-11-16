@@ -80,9 +80,15 @@ final class CameraModel {
             publishSettings()
         }
     }
-    var state: CameraState = .starting
+    var state: CameraState = .starting {
+        didSet {
+            if case .review(let image) = state { makeThumbnail(of: image) }
+        }
+    }
     var previewImage: CGImage?
     var zoomBarVisibleUntil = Date.distantPast
+    /// The newest photo in the Overshoot album, shown on the gallery key.
+    var lastThumbnail: UIImage?
 
     @ObservationIgnored let capture = CaptureService()
 
@@ -113,5 +119,23 @@ final class CameraModel {
         guard state.isLive else { return }
         state = .capturing
         capture.capturePhoto()
+    }
+
+    private func makeThumbnail(of image: UIImage) {
+        let scale = 160 / max(image.size.width, image.size.height)
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        Task.detached(priority: .utility) {
+            let thumbnail = await image.byPreparingThumbnail(ofSize: size)
+            await MainActor.run { self.lastThumbnail = thumbnail }
+        }
+    }
+
+    /// Reads the newest album photo without prompting for access.
+    func loadLastThumbnail() async {
+        guard PhotoLibrary.isAuthorized, let newest = PhotoLibrary.assets().first else {
+            lastThumbnail = nil
+            return
+        }
+        lastThumbnail = await PhotoLibrary.image(for: newest, size: CGSize(width: 160, height: 160), mode: .aspectFill)
     }
 }
