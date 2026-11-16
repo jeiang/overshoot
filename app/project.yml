@@ -1,0 +1,23 @@
+name: Overshoot
+options: { bundleIdPrefix: co.aidanpinard, deploymentTarget: { iOS: "27.0" } }
+settings:
+  base: { DEVELOPMENT_TEAM: P5U52CGYGW, CODE_SIGN_STYLE: Automatic, SWIFT_VERSION: "5.0",
+          SWIFT_STRICT_CONCURRENCY: minimal, TARGETED_DEVICE_FAMILY: "1",
+          "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64 }
+targets:
+  Overshoot:
+    type: application
+    platform: iOS
+    sources: [Overshoot]
+    dependencies: [{ framework: ../zig-out/OvershootCore.xcframework, embed: false }]
+    settings: { base: { PRODUCT_BUNDLE_IDENTIFIER: co.aidanpinard.overshoot } }
+    info:
+      path: Overshoot/Info.plist
+      properties:
+        CFBundleDisplayName: Overshoot
+        NSCameraUsageDescription: "Overshoot uses the camera to take photos."
+        NSPhotoLibraryAddUsageDescription: "Overshoot saves your photos to your library."
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIRequiresFullScreen: true
+        UIStatusBarHidden: true
+        UILaunchScreen: {}
