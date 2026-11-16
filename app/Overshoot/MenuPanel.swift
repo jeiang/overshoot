@@ -16,7 +16,7 @@ struct MenuPanel: View {
             case .camera: "camera.fill"
             case .stamp: "calendar"
             case .clock: "clock.fill"
-            case .facebook: "square.and.arrow.up.fill"
+            case .facebook: "f.square.fill"
             }
         }
 
@@ -92,7 +92,11 @@ struct MenuPanel: View {
                 .colorScheme(.dark)
                 .padding(.horizontal, 12)
                 .frame(minHeight: 44)
-                .onChange(of: pickedDate) { _, picked in model.clockOffsetSeconds = picked.timeIntervalSinceNow }
+                .onChange(of: pickedDate) { _, picked in
+                    // The picker has minute resolution, so less than a minute away is the current time.
+                    let offset = picked.timeIntervalSinceNow
+                    model.clockOffsetSeconds = abs(offset) < 60 ? 0 : offset
+                }
             row("Use the current time", selected: model.clockOffsetSeconds == 0) {
                 model.clockOffsetSeconds = 0
                 pickedDate = Date()
