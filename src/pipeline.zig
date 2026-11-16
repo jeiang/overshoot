@@ -764,7 +764,9 @@ const BloomDownsample = struct {
                     var sum: f32 = 0;
                     for (y_begin..y_end) |y| {
                         for (down.planes[c][y * down.width ..][x_begin..x_end]) |value| {
-                            sum += @max(value * down.gain - down.threshold, 0);
+                            // Clipped like the sensor: RAW highlights reach up to 16x white after
+                            // gain and would spread a haze over the shadows.
+                            sum += @max(@min(value * down.gain, 1) - down.threshold, 0);
                         }
                     }
                     down.bloom[c][by * down.bloom_width + bx] = sum / count;
