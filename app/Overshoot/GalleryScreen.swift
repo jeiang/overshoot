@@ -123,12 +123,15 @@ private struct Thumbnail: View {
 }
 
 /// Swipes through the album. The top bar shows the date and the camera from the photo's EXIF.
+/// Pinch or double-tap zooms; swiping between photos pauses while a photo is zoomed.
 private struct PhotoViewer: View {
     @Binding var assets: [PHAsset]
     @State var index: Int
     let close: () -> Void
     @State private var shareURL: URL?
     @State private var cameraName = ""
+    @State private var zoomed = false
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(spacing: 0) {
@@ -143,10 +146,11 @@ private struct PhotoViewer: View {
             .background(BarBackground())
             TabView(selection: $index) {
                 ForEach(Array(assets.enumerated()), id: \.element.localIdentifier) { offset, asset in
-                    FullImage(asset: asset).tag(offset)
+                    ZoomableImage(asset: asset, zoomed: offset == index ? $zoomed : .constant(false)).tag(offset)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
+            .scrollDisabled(zoomed)
             .background(.black)
             HStack {
                 Button("Back", action: close).buttonStyle(SoftKeyStyle())
@@ -156,6 +160,11 @@ private struct PhotoViewer: View {
                         .buttonStyle(SoftKeyStyle())
                         .accessibilityLabel("Share")
                 }
+                Spacer()
+                // iOS has no public way to open one photo in Photos; this opens the Photos app.
+                Button { openURL(URL(string: "photos-redirect://")!) } label: { Image(systemName: "photo.on.rectangle") }
+                    .buttonStyle(SoftKeyStyle())
+                    .accessibilityLabel("Open Photos")
                 Spacer()
                 Button { Task { await deleteCurrent() } } label: { Image(systemName: "trash") }
                     .buttonStyle(SoftKeyStyle())
@@ -207,25 +216,144 @@ private struct PhotoViewer: View {
     }
 }
 
-private struct FullImage: View {
+/// A photo that zooms like an old compact's playback: pinch or double-tap to zoom about the
+/// centre, drag to pan, and a corner navigator shows which part of the photo is on screen.
+private struct ZoomableImage: View {
     let asset: PHAsset
+    @Binding var zoomed: Bool
     @State private var image: UIImage?
+    @State private var fullResolution = false
+    @State private var scale: CGFloat = 1
+    @State private var baseScale: CGFloat = 1
+    @State private var offset: CGSize = .zero
+    @State private var baseOffset: CGSize = .zero
     @Environment(\.displayScale) private var displayScale
+
+    private static let maximumScale: CGFloat = 8
+    private static let doubleTapScale: CGFloat = 3
 
     var body: some View {
         GeometryReader { geometry in
+            let fitted = fittedSize(in: geometry.size)
             ZStack {
                 if let image {
-                    Image(uiImage: image).resizable().aspectRatio(contentMode: .fit)
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .scaleEffect(scale)
+                        .offset(offset)
                 } else {
                     ProgressView().tint(Theme.orange)
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
+            .clipped()
+            .contentShape(Rectangle())
+            .gesture(magnify(fitted: fitted, container: geometry.size))
+            .simultaneousGesture(scale > 1 ? pan(fitted: fitted, container: geometry.size) : nil)
+            .onTapGesture(count: 2) {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    setScale(scale > 1 ? 1 : Self.doubleTapScale, fitted: fitted, container: geometry.size)
+                }
+                baseScale = scale
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if scale > 1, let image {
+                    Navigator(image: image, visible: visibleRect(fitted: fitted, container: geometry.size))
+                        .padding(10)
+                        .allowsHitTesting(false)
+                }
+            }
             .task(id: asset.localIdentifier) {
                 let size = CGSize(width: geometry.size.width * displayScale, height: geometry.size.height * displayScale)
                 image = await PhotoLibrary.image(for: asset, size: size, mode: .aspectFit)
             }
+            .task(id: scale > 1) {
+                guard scale > 1, !fullResolution else { return }
+                fullResolution = true
+                let size = CGSize(width: asset.pixelWidth, height: asset.pixelHeight)
+                if let full = await PhotoLibrary.image(for: asset, size: size, mode: .aspectFit) { image = full }
+            }
+            .onDisappear {
+                setScale(1, fitted: fitted, container: geometry.size)
+                baseScale = 1
+            }
         }
+    }
+
+    private func fittedSize(in container: CGSize) -> CGSize {
+        guard asset.pixelWidth > 0, asset.pixelHeight > 0, container.width > 0, container.height > 0 else { return container }
+        let aspect = CGFloat(asset.pixelWidth) / CGFloat(asset.pixelHeight)
+        return container.width / container.height > aspect
+            ? CGSize(width: container.height * aspect, height: container.height)
+            : CGSize(width: container.width, height: container.width / aspect)
+    }
+
+    private func magnify(fitted: CGSize, container: CGSize) -> some Gesture {
+        MagnifyGesture()
+            .onChanged { value in setScale(baseScale * value.magnification, fitted: fitted, container: container) }
+            .onEnded { _ in
+                if scale < 1.05 { withAnimation(.easeOut(duration: 0.2)) { setScale(1, fitted: fitted, container: container) } }
+                baseScale = scale
+            }
+    }
+
+    private func pan(fitted: CGSize, container: CGSize) -> some Gesture {
+        DragGesture()
+            .onChanged { value in
+                offset = clamped(
+                    CGSize(width: baseOffset.width + value.translation.width, height: baseOffset.height + value.translation.height),
+                    scale: scale, fitted: fitted, container: container
+                )
+            }
+            .onEnded { _ in baseOffset = offset }
+    }
+
+    private func setScale(_ value: CGFloat, fitted: CGSize, container: CGSize) {
+        scale = min(max(value, 1), Self.maximumScale)
+        offset = clamped(offset, scale: scale, fitted: fitted, container: container)
+        baseOffset = offset
+        zoomed = scale > 1
+    }
+
+    /// Keeps the zoomed photo covering the screen: no pan past its edges.
+    private func clamped(_ offset: CGSize, scale: CGFloat, fitted: CGSize, container: CGSize) -> CGSize {
+        let limitX = max(0, (fitted.width * scale - container.width) / 2)
+        let limitY = max(0, (fitted.height * scale - container.height) / 2)
+        return CGSize(width: min(max(offset.width, -limitX), limitX), height: min(max(offset.height, -limitY), limitY))
+    }
+
+    /// The on-screen part of the photo, in unit coordinates of the photo.
+    private func visibleRect(fitted: CGSize, container: CGSize) -> CGRect {
+        let width = min(1, container.width / (fitted.width * scale))
+        let height = min(1, container.height / (fitted.height * scale))
+        let centreX = 0.5 - offset.width / (fitted.width * scale)
+        let centreY = 0.5 - offset.height / (fitted.height * scale)
+        return CGRect(x: centreX - width / 2, y: centreY - height / 2, width: width, height: height)
+    }
+}
+
+/// The playback-zoom navigator: the whole photo in miniature with a frame around the shown part.
+private struct Navigator: View {
+    let image: UIImage
+    let visible: CGRect
+    private let side: CGFloat = 96
+
+    var body: some View {
+        let aspect = image.size.width / max(image.size.height, 1)
+        let size = aspect >= 1 ? CGSize(width: side, height: side / aspect) : CGSize(width: side * aspect, height: side)
+        Image(uiImage: image)
+            .resizable()
+            .frame(width: size.width, height: size.height)
+            .opacity(0.6)
+            .overlay(alignment: .topLeading) {
+                Rectangle()
+                    .stroke(Theme.orange, lineWidth: 2)
+                    .frame(width: visible.width * size.width, height: visible.height * size.height)
+                    .offset(x: visible.minX * size.width, y: visible.minY * size.height)
+            }
+            .padding(3)
+            .background(.black.opacity(0.7))
+            .overlay(Rectangle().stroke(.white.opacity(0.8), lineWidth: 1))
     }
 }
