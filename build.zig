@@ -134,9 +134,11 @@ fn add_app_steps(
     return &xcodegen.step;
 }
 
-/// Manual export signing: the App Manager API key has no cloud-signing permission, so the export
-/// uses the keychain's Apple Distribution identity and the "Overshoot App Store" profile, which
-/// must be installed in ~/Library/Developer/Xcode/UserData/Provisioning Profiles.
+/// Manual signing: the App Manager API key has no cloud-signing permission, so the archive and
+/// the export use a keychain Apple Distribution identity and the "Overshoot App Store CI"
+/// profile, which must be installed in ~/Library/Developer/Xcode/UserData/Provisioning Profiles.
+/// The profile holds both the local and the CI distribution certificates.
+const profile_name = "Overshoot App Store CI";
 const export_options_format =
     \\<?xml version="1.0" encoding="UTF-8"?>
     \\<plist version="1.0"><dict>
@@ -146,15 +148,17 @@ const export_options_format =
     \\<key>signingStyle</key><string>manual</string>
     \\<key>signingCertificate</key><string>Apple Distribution</string>
     \\<key>provisioningProfiles</key><dict>
-    \\<key>co.aidanpinard.overshoot</key><string>Overshoot App Store</string>
+    \\<key>co.aidanpinard.overshoot</key><string>
+++ profile_name ++
+    \\</string>
     \\</dict>
     \\<key>manageAppVersionAndBuildNumber</key><false/>
     \\</dict></plist>
     \\
 ;
 
-/// Archives with automatic signing through an App Store Connect API key, then exports and (by
-/// default) uploads to TestFlight. The archive lands in zig-out/Overshoot.xcarchive.
+/// Archives with manual distribution signing, then exports and (by default) uploads to
+/// TestFlight through the App Store Connect API key. The archive is zig-out/Overshoot.xcarchive.
 fn add_testflight_step(
     b: *std.Build,
     xcodegen_step: *std.Build.Step,
@@ -176,7 +180,11 @@ fn add_testflight_step(
         "-configuration",          "Release",      "-destination",
         "generic/platform=iOS",    "-archivePath", "zig-out/Overshoot.xcarchive",
     });
-    archive.addArgs(auth.?);
+    archive.addArgs(&.{
+        "CODE_SIGN_STYLE=Manual",
+        "CODE_SIGN_IDENTITY=Apple Distribution",
+        "PROVISIONING_PROFILE_SPECIFIER=" ++ profile_name,
+    });
     archive.addArg(b.fmt("CURRENT_PROJECT_VERSION={s}", .{build_number.?}));
     archive.setCwd(b.path("."));
     archive.has_side_effects = true;

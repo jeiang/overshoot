@@ -22,7 +22,17 @@ zig build app -Dasc-key-path=<AuthKey.p8> -Dasc-key-id=<key ID> -Dasc-issuer-id=
 zig build testflight -Dbuild-number=$(date +%Y%m%d%H%M) -Dasc-key-path=… -Dasc-key-id=… -Dasc-issuer-id=…
 ```
 
-`testflight` archives to `zig-out/Overshoot.xcarchive` and uploads the build to App Store Connect (add `-Dtestflight-upload=false` to only export `zig-out/testflight/Overshoot.ipa`). The export signs with the keychain's Apple Distribution identity and the "Overshoot App Store" provisioning profile, which must be installed in `~/Library/Developer/Xcode/UserData/Provisioning Profiles`. The build number must grow with every upload.
+`testflight` archives to `zig-out/Overshoot.xcarchive` and uploads the build to App Store Connect (add `-Dtestflight-upload=false` to only export `zig-out/testflight/Overshoot.ipa`). The archive and export sign manually with a keychain Apple Distribution identity and the "Overshoot App Store CI" provisioning profile, which must be installed in `~/Library/Developer/Xcode/UserData/Provisioning Profiles`. The build number must grow with every upload.
+
+## Continuous integration
+
+`.github/workflows/testflight.yml` runs lint and tests on every push and pull request on the `xcode-27` runner. Pull requests also build the app unsigned; pushes to `main` upload a TestFlight build numbered with the UTC time. Repository secrets:
+
+| Secret | Content |
+|---|---|
+| `DIST_P12_BASE64`, `DIST_P12_PASSWORD` | Base64 of the CI Apple Distribution identity (`.p12`) and its password |
+| `PROFILE_BASE64` | Base64 of the "Overshoot App Store CI" provisioning profile |
+| `ASC_KEY_P8_BASE64`, `ASC_KEY_ID`, `ASC_ISSUER_ID` | Base64 of the App Store Connect API key (`.p8`), its key ID and issuer ID |
 
 `overshoot-cli render --camera canon|nikon --input <image> --output <jpg>` renders a photo through the core pipeline; `overshoot-cli stats <image>...` prints the tone statistics used for calibration.
 
