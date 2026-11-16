@@ -14,10 +14,21 @@
       ];
     in
     {
-      devShells = forAllSystems (system: {
-        default = nixpkgs.legacyPackages.${system}.mkShell {
-          packages = [ nixpkgs.legacyPackages.${system}.zig_0_17 ];
-        };
-      });
+      devShells = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          # mkShellNoCC: mkShell exports SDKROOT/DEVELOPER_DIR for the nixpkgs Apple SDK,
+          # which breaks xcodebuild and Zig's SDK detection.
+          default = pkgs.mkShellNoCC {
+            packages = [
+              pkgs.zig_0_17
+              pkgs.xcodegen
+            ];
+          };
+        }
+      );
     };
 }
